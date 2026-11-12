@@ -66,6 +66,163 @@ def _key_code(name):
     except ValueError:
         raise ValueError(f"Error!: Invalid Key {name}, Find Valid Keys Here!: https://www.pygame.org/docs/ref/key.html")
 
+#Vector2D is a type that represents a 2 dimensional vector. This Means its a Value with Magnitude and direction
+#This is used often in maths!, if you take a level maths, you'll end up quite familar with alot of these functions
+
+class Vector2D:
+
+    #Vector2D's take an X and Y component.
+    def __init__(self,x:float,y:float):
+        self.x = x
+        self.y = y
+
+    #add two Vector2D's together, other refers to another Vector2D
+    def add(self,other: "Vector2D")-> "Vector2D":
+        return Vector2D(self.x + other.x,self.y + other.y)
+
+    #subtract two Vector2D's, other refers to another Vector2D
+    def subtract(self,other: "Vector2D")-> "Vector2D":
+        return Vector2D(self.x - other.x,self.y - other.y)
+
+    #Multiplies the vector by a scalar component, e.g 2, which would make it 2 times longer
+    def scale(self,factor:float)-> "Vector2D":
+        return Vector2D(self.x * factor,self.y * factor)
+
+    #Returns the magnitude, or length of the vector.
+    def magnitude(self) -> float:
+        return(((self.x**2)+(self.y**2))**0.5)
+
+    #The Methods Bellow Essentially Allow you to do a + b and run a.add(b)
+
+    def __add__(self, other: "Vector2D") -> "Vector2D":
+        return self.add(other)
+    def __sub__(self, other: "Vector2D") -> "Vector2D":
+        return self.subtract(other)
+    def __mul__(self, factor: float) -> "Vector2D":
+        return self.scale(factor)
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Vector2D):
+            return NotImplemented
+        return self.x == other.x and self.y == other.y
+    def __truediv__(self, factor: float) -> "Vector2D":
+        if factor == 0:
+            raise ZeroDivisionError("Cannot divide a vector by zero!")
+        return self.scale(1 / factor)
+    def __floordiv__(self, factor: float) -> "Vector2D":
+        if factor == 0:
+            raise ZeroDivisionError("Cannot divide a vector by zero!")
+        return Vector2D(self.x // factor, self.y // factor)
+    def __neg__(self) -> "Vector2D":
+        return self.scale(-1)
+    def __abs__(self) -> float:
+        return self.magnitude()
+    mag = magnitude #you can also do Vector2D.mag() to get magnitude
+
+    #The Dot product of two vectors, essentially gives you a number that asks how closely do these two numbers point in the same direction.
+    def dot(self,other:"Vector2D")-> float:
+        return (self.x * other.x) + (self.y * other.y)
+
+    #The Cross Product Tells you the generall rotational direction from one vector too the other.
+    #Above 0 means Counter clockwise from Self to Other
+    #At 0 means the vectors are Parralel or Collinear (on the same line)
+    #Bellow 0 menas the Vector is Clockwise from Self to Other
+    def cross(self,other:"Vector2D")-> float:
+        return (self.x * other.y) - (self.y * other.x)
+
+    #Converts the Vector to a Unit Vector (a vector of length 1) in the same direction as the original.
+    def normalise(self)-> "Vector2D":
+        vectormagnitude = self.magnitude()
+
+        if vectormagnitude == 0:
+            raise ZeroDivisionError("A Vector of Magnitude 0 Cannot be Normalised!")
+        
+        return self.scale(1 / vectormagnitude)
+
+    #gets the distance between self and another vector
+    def distance(self,other:"Vector2D")-> float:
+        return (other.subtract(self)).magnitude()
+
+    
+    #Lerp stands for Linear Interpolation
+    #It essentially moves between the two vectors, following a linear ratio
+    #so when the "t" value is 0, it returns the start vector, when the "t" value is 1 it returns the end vector, when the "t" value is 0.5, it returns the vector between those two vectors
+    def lerp(self,other:"Vector2D",t:float) -> "Vector2D":
+        return self.add((other.subtract(self).scale(t))) #The formula sums to a + (b-a)t, where a is self, and b is the other vector.
+
+    #utilizing the dot product, we can return the (smallest) angle between two vectors, can be in radians or degrees, default degrees.
+    def angle(self,other:"Vector2D", unit:str = "degrees")-> float:
+        magnitude_product = self.magnitude() * other.magnitude()
+
+        if magnitude_product == 0:
+            raise ZeroDivisionError("Cannot calculate an angle involving a zero vector!")
+        
+        cosine = self.dot(other) / magnitude_product
+        output = math.acos(max(-1.0, min(1.0, cosine)))  #handle floating point errors 
+        if unit == "degrees":
+            output = math.degrees(output)
+
+        return output
+    #rotates the current vector
+    def rotate(self, angle: float, unit: str = "degrees") -> "Vector2D":
+
+        if unit == "degrees":
+            angle = math.radians(angle)
+
+        x = self.x * math.cos(angle) - self.y * math.sin(angle)
+        y = self.y * math.cos(angle) + self.x * math.sin(angle)
+
+        EPSILON = 1e-10 #essentially a check for floating point errors
+
+        if abs(x) < EPSILON:
+            x = 0.0
+
+        if abs(y) < EPSILON:
+            y = 0.0
+
+        return Vector2D(x, y)
+
+    #essentially, finds the component of self that points in the direction of other.
+    def project(self,other: "Vector2D")-> "Vector2D":
+        if other.mag() == 0:
+            raise ZeroDivisionError("You Cannot Project a Zero Vector Onto Another Vector!")
+        return other.scale(self.dot(other)/(other.magnitude()**2))
+
+    #refelcts a vector based off a normal (a vector perpindicualr to the object it hits)
+    def reflect(self,normal:"Vector2D") -> "Vector2D":
+        normal = normal.normalise()
+        return self.subtract(normal.scale(2*self.dot(normal)))
+
+    #limits a vectors magnitude to a maximum value:
+    def clamp_magnitude(self,max:float) -> "Vector2D":
+        if max < 0:
+            raise ValueError("Maximum magnitude cannot be negative!")
+        if self.mag() > max:
+            return (self.normalise()).scale(max)
+        return self
+
+    #moves a vector toward anothe vector by a set distance 
+    def move_toward(self,other:"Vector2D",amount:float) ->"Vector2D":
+        dividing_magnitude = (other.subtract(self)).mag()
+        if dividing_magnitude <= amount:
+            return other
+
+        return self.add(((other.subtract(self)).scale(1/dividing_magnitude)).scale(amount))
+
+    #Returns the Vector perpendicular To The Current Vector, default clockwise.
+    def perpendicular(self,direction:str = "clockwise") -> "Vector2D":
+        if direction == "clockwise":
+            return Vector2D(self.y,-self.x)
+        else:
+            return Vector2D(-self.y,self.x)
+
+    
+
+
+
+
+
+
+
 # ======SCREEN======
 
 class _Screen():
