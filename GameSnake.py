@@ -24,7 +24,7 @@ _font = pygame.font.Font(None, 20)
 _ROTATE_MODES = ("all", "flip", "none")
 _EDGE_MODES = ("free", "onscreen", "bounce")
 
-# ===== NEW: Controller Support =====
+# ===== Controller Support =====
 #Pygame has a standardised controller system, which gives Xbox, PlayStation and Switch controllers ONE shared layout.
 #It is optional, so if this version of pygame doesnt have it, controllers are simply switched off (the keyboard still works!)
 try:
@@ -66,8 +66,51 @@ def _key_code(name):
     except ValueError:
         raise ValueError(f"Error!: Invalid Key {name}, Find Valid Keys Here!: https://www.pygame.org/docs/ref/key.html")
 
+#Tweening is the process of moving between two values,following a ratio. its also used internally for this very purpose.
+#This can be done linearly, with inward easing (quadratically), with outward easing (inverse quadratically), or with both inward and outward easing.
+#This class just automates this across frames, and is used in sprites to modify a value, go look there for more informaiton!
+
+class _Tween: #It stands for between, if you couldn't tell.
+
+    def __init__(self, start, end, duration, easing="linear"):
+        self.start = start
+        self.end = end
+        self.duration = max(0.001, duration)
+        self.elapsed = 0
+        self.easing = easing
+        self.finished = False
+
+    def update(self, dt):
+        if self.finished:
+            return self.end
+
+        self.elapsed += dt
+
+        progress = min(self.elapsed / self.duration, 1.0)
+
+        # Apply easing
+        if self.easing == "ease_in":
+            progress = progress * progress
+
+        elif self.easing == "ease_out":
+            progress = 1 - (1 - progress) ** 2
+
+        elif self.easing == "ease_in_out":
+            progress = -(math.cos(math.pi * progress) - 1) / 2
+
+        # Interpolate between values
+        value = self.start + (self.end - self.start) * progress
+
+        if self.elapsed >= self.duration:
+            self.finished = True
+            return self.end
+
+        return value
+
+
+
 #Vector2D is a type that represents a 2 dimensional vector. This Means its a Value with Magnitude and direction
-#This is used often in maths!, if you take a level maths, you'll end up quite familar with alot of these functions
+#This is used often in maths, and can be very useful to use with Velocity.
 
 class Vector2D:
 
@@ -240,7 +283,7 @@ class _Screen():
         self.fps = 30
         self.running = True
         self.background = "white"
-        self._freeze = 0                   # NEW: how many frames of hitstop are still waiting to be played
+        self._freeze = 0                   # how many frames of hitstop are still waiting to be played
         self._screen_set()
 
     def _screen_set(self): # This is called internally, to apply your changes after you set them
@@ -264,12 +307,11 @@ class _Screen():
         Keyboard._new_frame()
         Mouse._new_frame()
         self._read_events()
-        Gamepad._poll()                    # NEW: controllers are read once per frame, just like the keyboard
+        Gamepad._poll()
 
         self._show_frame(advance=True)
 
-        #NEW: Hitstop! If Screen.hitstop() was called during this frame, we hold the picture here for a few frames.
-        #Your game loop is stuck inside this function while we do, so EVERYTHING freezes without you changing any code.
+        #Function to pause time temporarily.
         while self._freeze > 0 and self.running:
             self._freeze -= 1
             self._read_events()            # still listen to the keyboard, WITHOUT clearing it, so a button pressed during the freeze still counts afterwards
@@ -290,7 +332,7 @@ class _Screen():
         self.surface.fill(self.background)
         _clock.tick(self.fps)
 
-    #NEW: Freezes the whole game for a few frames. Great for making big hits feel heavy!
+    #Freezes the whole game for a few frames. Great for making big hits feel heavy!
     #Example: Screen.hitstop(6) freezes for 6 frames (a tenth of a second at 60 fps)
     #The freeze happens at the next Screen.update(), and bigger numbers stack by taking the largest, not adding.
     def hitstop(self, frames):
@@ -398,7 +440,8 @@ class Sprite:
         self._hitbox = None                # None = use the whole image, Otherwise use the specified Hitbox
         self._x_limits = None              # see clamping below
         self._y_limits = None
-        self._zone = None                  # a Zone the sprite is locked inside
+        self._zone = None                  # a Zone the sprite is locked insid
+        self._tweens = {}                   #An Array of all the current active tweens
         Stage._sprites.append(self)        # the Stage will now draw it for us
 
     #Where a sprite's costumes come from. A normal Sprite loads pictures from the "sprites" folder.
@@ -562,6 +605,48 @@ class Sprite:
                     break
 
             self.costume = frames[self._animation_frame]
+    #--- Tweening ---
+    #Smoothly animate a numeric sprite property.
+    def tween(self, property, target, duration=1.0, easing="linear"):
+
+        if not hasattr(self, property):
+            raise AttributeError(f"Sprite has no property '{property}'")
+
+        start = getattr(self, property)
+
+        if not isinstance(start, (int, float)):
+            raise TypeError(f"Property '{property}' must be numeric")
+
+        self._tweens[property] = _Tween(
+            start,
+            target,
+            duration,
+            easing
+        )
+
+    #Stop a Active Tween
+    def stop_tween(self, property=None):
+
+        if property is None:
+            self._tweens.clear()
+        else:
+            self._tweens.pop(property, None)
+
+    #Internal, called every update to update the tweens.
+    def _update_tweens(self, dt):
+
+        finished = []
+
+        for property, tween in self._tweens.items():
+            value = tween.update(dt)
+
+            setattr(self, property, value)
+
+            if tween.finished:
+                finished.append(property)
+
+        for property in finished:
+            self._tweens.pop(property, None)
 
     # --- hitboxes ---
 
@@ -635,7 +720,7 @@ class Sprite:
     def _copy_settings(self, twin):
         twin.costume = self.costume
         twin.direction = self.direction
-        twin.visible = self.visible
+        twin.visible = self.visible #TODO add all the new rhings i forgot
         twin.fixed = self.fixed
         twin.show_hitbox = self.show_hitbox
         twin.rotate_mode = self.rotate_mode
@@ -1042,23 +1127,32 @@ class _Stage:
             ox, oy = self._offset()
             Screen.surface.blit(self._backdrop, (-ox, -oy))
 
-    #advance=False (used by hitstop) draws the picture WITHOUT moving anything: sprites, camera and particles all stay frozen
+        #advance=False (used by hitstop) draws the picture WITHOUT moving anything: sprites, camera and particles all stay frozen
     def _draw_frame(self, advance=True):
         if advance:
+            delta_time = 1 / Screen.fps
+
             for sprite in self._sprites:
                 sprite._apply_edge_mode()
                 sprite._apply_limits()
-            self.camera._update()          # after sprites are limited, so it follows where they really are
-            Particles._update()            # NEW: particles move once per real frame
+                sprite._update_tweens(delta_time)
+                sprite._update_animation(delta_time)
+
+            self.camera._update()
+            Particles._update()
+
         self._draw_backdrop()
+
         for tilemap in self._tilemaps:
             tilemap._draw()
+
         for sprite in self._sprites:
             sprite._draw()
-        Particles._draw()                  # NEW: on top of sprites, underneath debug zones
+
+        Particles._draw()
+
         for zone in self._zones:
             zone._draw()
-
 
 # ======ZONES======
 
