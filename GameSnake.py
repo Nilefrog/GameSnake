@@ -1,6 +1,6 @@
 import os,math,random,time,pygame,sys,textwrap
 
-__all__ = ["random_number","random_float","Screen","color","colour","Keyboard","Mouse","Gamepad","Sprite","Stage","Sound","Zone","TileMap","Particles","Text","Box"]
+__all__ = ["random_number","random_float","Screen","color","colour","Keyboard","Mouse","Gamepad","Sprite","Stage","Sound","Zone","TileMap","Particles","Text","Box","Vector2D"]
 
 #All Of This Code is Based off of the pygame library!, You Can Read About it Here: https://www.pygame.org/docs/
 #Pygame allows python to draw to the screen, and read inputs!
@@ -482,6 +482,86 @@ class Sprite:
 
     def delete(self):                      # Deletes the Current Sprite 
         Stage._sprites.remove(self)
+    # --- Animations ---
+    
+    #Creates a named animation from costume names or costume numbers.
+    #speed is measured in frames per second. loop=False makes it play once and stop.
+    #Example: player.add_animation("walk", [0, 1, 2, 3], speed=8)
+    def add_animation(self, name, frames, speed=8, loop=True):
+        name = str(name)
+        if not name:
+            raise ValueError("Error!: Animation names cannot be empty!")
+        if not isinstance(speed, (int, float)) or isinstance(speed, bool) or speed <= 0:
+            raise ValueError("Error!: Animation speed must be a number greater than 0!")
+        if not isinstance(loop, bool):
+            raise TypeError("Error!: Animation loop must be True or False!")
+
+        frames = list(frames)
+        if not frames:
+            raise ValueError("Error!: An animation must contain at least one frame!")
+
+        costume_names = [costume_name for costume_name, _ in self._costumes]
+        frame_indices = []
+        for frame in frames:
+            if isinstance(frame, int) and not isinstance(frame, bool):
+                if frame < 0 or frame >= len(self._costumes):
+                    raise ValueError(f"Error!: Animation '{name}' uses costume index {frame}, but '{self.name}' only has {len(self._costumes)} costumes!")
+                frame_indices.append(frame)
+            elif isinstance(frame, str) and frame in costume_names:
+                frame_indices.append(costume_names.index(frame))
+            else:
+                raise ValueError(f"Error!: '{frame}' is not a valid costume name or index for '{self.name}'. Available costumes: {', '.join(costume_names)}")
+
+        self._animations[name] = {
+            "frames": frame_indices,
+            "speed": float(speed),
+            "loop": loop
+        }
+
+    #Starts an animation. Calling it again while it is already playing does not restart it,
+    #unless restart=True is supplied.
+    #Example: player.animate("walk")
+    def animate(self, name, restart=False):
+        if name not in self._animations:
+            available = ', '.join(self._animations) or 'None'
+            raise ValueError(f"Error!: Sprite '{self.name}' has no animation called '{name}'. Available animations: {available}")
+
+        if self.animation == name and self.animation_playing and not restart:
+            return
+
+        self.animation = name
+        self.animation_playing = True
+        self._animation_frame = 0
+        self._animation_timer = 0.0
+        self.costume = self._animations[name]["frames"][0]
+
+    #Stops the current animation on whichever costume is currently displayed.
+    def stop_animation(self):
+        self.animation_playing = False
+
+    #Advances the animation. Called internally once per normal game frame, never during hitstop.
+    def _update_animation(self, delta_time):
+        if not self.animation_playing or self.animation is None:
+            return
+
+        animation = self._animations[self.animation]
+        frames = animation["frames"]
+        frame_duration = 1.0 / animation["speed"]
+        self._animation_timer += delta_time
+
+        while self._animation_timer >= frame_duration and self.animation_playing:
+            self._animation_timer -= frame_duration
+            self._animation_frame += 1
+
+            if self._animation_frame >= len(frames):
+                if animation["loop"]:
+                    self._animation_frame = 0
+                else:
+                    self._animation_frame = len(frames) - 1
+                    self.animation_playing = False
+                    break
+
+            self.costume = frames[self._animation_frame]
 
     # --- hitboxes ---
 
