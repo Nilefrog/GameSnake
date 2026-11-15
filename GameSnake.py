@@ -1,6 +1,11 @@
 import os,math,random,time,pygame,sys,textwrap
 
-__all__ = ["random_number","random_float","Screen","color","colour","Keyboard","Mouse","Gamepad","Sprite","Stage","Sound","Zone","TileMap","Particles","Text","Box","Vector2D"]
+__all__ = [ #Now on multiple lines so its easier to read YIPEE
+    "random_number", "random_float", "Screen", "color", "colour",
+    "Keyboard", "Mouse", "Gamepad", "Sprite", "PhysicsObject",
+    "Stage", "Sound", "Zone", "TileMap", "Particles", "Text",
+    "Box", "Vector2D"
+]
 
 #All Of This Code is Based off of the pygame library!, You Can Read About it Here: https://www.pygame.org/docs/
 #Pygame allows python to draw to the screen, and read inputs!
@@ -823,6 +828,245 @@ class Sprite:
             if self.show_hitbox:
                 pygame.draw.rect(Screen.surface, (255, 0, 0), self._hitbox_rect().move(-ox, -oy), 1)
 
+#A Physics Object has all of the Same Functions as a Sprite, But also comes with physics (obviously) and collision with tilemaps.
+#They have built in gravity and friction measured in pixels per second, and acceleration and friction(deceleration) are technically measured in pixels per second squared (think of suvat in physics if your wondering)
+class PhysicsObject(Sprite):
+
+    def __init__(self, name, x=None, y=None, size=100):
+        super().__init__(name, x, y, size)
+
+        # Movement
+        self.velocity = Vector2D(0, 0) #A Vector in Which the Object is Moving
+        self.acceleration = Vector2D(0, 0) #A Vector in Which is added to velocity every frame
+        self.gravity = 100 #Gravity, hopefully you got that one.
+        self.mass = 1 #How heavy the object is compared to gravity
+
+        # Friction
+        self.horizontal_friction = 0 #Deccelration in the x axis on the ground
+        self.vertical_friction = 0 #Decceleration in the y axis
+        self.air_horizontal_friction = 0 #Decceleration in the x axis in the air (when not colliding with the floor)
+
+        # Collision settings
+        self._collision_type = "basic" #Can be either basic, push or bounce. Basic objects stop on collision, push objects go opposite ways after a collision. Bounce objects are.... bouncy.
+        self.collide_with_sprites = False #Whether the physics object collides with sprites
+
+        # Collision information
+        self.is_on_floor = False
+        self.is_on_wall = False
+        self.is_on_roof = False
+
+    @property
+    def collision_type(self):
+        return self._collision_type
+
+    @collision_type.setter
+    def collision_type(self, value):
+        value = str(value).lower()
+
+        if value not in ("basic", "push", "bounce"):
+            raise ValueError(
+                "Collision type must be 'basic', 'push' or 'bounce'!"
+            )
+
+        self._collision_type = value
+
+    @property
+    def is_on_ceiling(self):
+        return self.is_on_roof
+
+    def _apply_friction(self, value, amount, dt):
+        if amount <= 0 or value == 0:
+            return value
+
+        if value > 0:
+            return max(0, value - amount * dt)
+
+        return min(0, value + amount * dt)
+
+    #This is called every frame, and applies the physics settings.
+    def _update_physics(self, dt):
+        # Remember whether we were on the floor before this update.
+        was_on_floor = self.is_on_floor
+
+        # Reset collision information.
+        self.is_on_floor = False
+        self.is_on_wall = False
+        self.is_on_roof = False
+
+        # Apply acceleration and gravity.
+        self.velocity.x += self.acceleration.x * dt
+        self.velocity.y += (self.acceleration.y + self.gravity) * dt
+
+        # Apply horizontal friction.
+        if was_on_floor:
+            friction = self.horizontal_friction
+        else:
+            friction = self.air_horizontal_friction
+
+        self.velocity.x = self._apply_friction(
+            self.velocity.x, friction, dt
+        )
+
+        # Apply vertical friction.
+        self.velocity.y = self._apply_friction(
+            self.velocity.y, self.vertical_friction, dt
+        )
+
+        # Move horizontally and resolve tilemap collisions.
+        self.x += self.velocity.x * dt
+        self._resolve_tilemap_collision("x")
+
+        # Move vertically and resolve tilemap collisions.
+        self.y += self.velocity.y * dt
+        self._resolve_tilemap_collision("y")
+
+        # Acceleration is applied continuously, so it remains unchanged.
+
+    def _resolve_tilemap_collision(self, axis):
+        rect = self._hitbox_rect()
+
+        for tilemap in Stage._tilemaps:
+            ts = tilemap.tile_size
+
+            left = rect.left // ts
+            right = (rect.right - 1) // ts
+            top = rect.top // ts
+            bottom = (rect.bottom - 1) // ts
+
+            for row in range(top, bottom + 1):
+                for col in range(left, right + 1):
+                    if tilemap._cell(col, row) not in tilemap._solid:
+                        continue
+
+                    tile = pygame.Rect(
+                        col * ts, row * ts, ts, ts
+                    )
+
+                    rect = self._hitbox_rect()
+
+                    if not rect.colliderect(tile):
+                        continue
+
+                    if axis == "x":
+                        if self.velocity.x > 0:
+                            self.x += tile.left - rect.right
+                        elif self.velocity.x < 0:
+                            self.x += tile.right - rect.left
+                        else:
+                            continue
+
+                        self.velocity.x = 0
+                        self.is_on_wall = True
+
+                    else:
+                        if self.velocity.y > 0:
+                            self.y += tile.top - rect.bottom
+                            self.is_on_floor = True
+                        elif self.velocity.y < 0:
+                            self.y += tile.bottom - rect.top
+                            self.is_on_roof = True
+                        else:
+                            continue
+
+                        self.velocity.y = 0
+
+                    rect = self._hitbox_rect()
+
+    def _resolve_sprite_collision(self, other):
+        if not self.collide_with_sprites:
+            return
+
+        if not other.collide_with_sprites:
+            return
+
+        if not isinstance(other, PhysicsObject):
+            return
+
+        if other is self:
+            return
+
+        a = self._hitbox_rect()
+        b = other._hitbox_rect()
+
+        if not a.colliderect(b):
+            return
+
+        overlap_x = min(a.right - b.left, b.right - a.left)
+        overlap_y = min(a.bottom - b.top, b.bottom - a.top)
+
+        # Resolve along whichever axis has the least overlap.
+        if overlap_x < overlap_y:
+            direction = -1 if self.x < other.x else 1
+            normal = Vector2D(direction, 0)
+            overlap = overlap_x
+
+            self.is_on_wall = True
+            other.is_on_wall = True
+
+        else:
+            direction = -1 if self.y < other.y else 1
+            normal = Vector2D(0, direction)
+            overlap = overlap_y
+
+            if direction == -1:
+                self.is_on_floor = True
+                other.is_on_roof = True
+            else:
+                self.is_on_roof = True
+                other.is_on_floor = True
+
+        # Decide which collision response to use.
+        modes = (self.collision_type, other.collision_type)
+
+        if "bounce" in modes: #Guys im so stupid if anyone can figure out how to do this better please tell me
+            mode = "bounce"
+        elif "push" in modes:
+            mode = "push"
+        else:
+            mode = "basic"
+
+        # Calculate how much each object should move.
+        total_mass = self.mass + other.mass
+
+        if self.mass <= 0 or other.mass <= 0 or total_mass <= 0:
+            raise ValueError("PhysicsObject mass must be greater than 0!")
+
+        move_self = overlap * (other.mass / total_mass)
+        move_other = overlap * (self.mass / total_mass)
+
+        self.x += normal.x * move_self
+        self.y += normal.y * move_self
+
+        other.x -= normal.x * move_other
+        other.y -= normal.y * move_other
+
+        if mode == "bounce":
+            # Exchange momentum along the collision normal.
+            relative_velocity = (
+                (self.velocity.x - other.velocity.x) * normal.x
+                + (self.velocity.y - other.velocity.y) * normal.y
+            )
+
+            if relative_velocity < 0:
+                impulse = (
+                    -2 * relative_velocity
+                    / (1 / self.mass + 1 / other.mass)
+                )
+
+                self.velocity.x += normal.x * impulse / self.mass
+                self.velocity.y += normal.y * impulse / self.mass
+
+                other.velocity.x -= normal.x * impulse / other.mass
+                other.velocity.y -= normal.y * impulse / other.mass
+
+        else:
+            # Basic and push collisions stop movement along the collision axis.
+            if normal.x != 0:
+                self.velocity.x = 0
+                other.velocity.x = 0
+            else:
+                self.velocity.y = 0
+                other.velocity.y = 0
 
 # ======TEXT AND BOX======
 
@@ -831,6 +1075,7 @@ class Sprite:
 #Text and Box are both _Drawn, which means they are ALSO Sprites, so everything a Sprite can do works on them for free:
 #go_to, move, show, hide, clone, size, direction, touching, touching_mouse, clamp_x, delete...
 #Sprites are drawn in the order they were made, so a Box made BEFORE some Text will sit behind it!
+#Btw, Sprites that generate there own simple visuals are known as primitives!, other examples of primitives include lines and circles, for example.
 class _Drawn(Sprite):
     _LOOKS = ()          # the settings that change the picture. Changing any of them makes it redraw
     _COLOURS = ()        # the settings that hold a colour, so you can write colour="red" or colour=(255, 0, 0)
@@ -1143,21 +1388,27 @@ class _Stage:
                 sprite._update_tweens(delta_time)
                 sprite._update_animation(delta_time)
 
+                if isinstance(sprite, PhysicsObject):
+                    sprite._update_physics(delta_time)
+
+                    # Apply screen boundaries and limits after movement.
+                    sprite._apply_edge_mode()
+                    sprite._apply_limits()
+
+            # Resolve collisions between PhysicsObjects.
+            physics_objects = [
+                sprite for sprite in self._sprites
+                if isinstance(sprite, PhysicsObject)
+                and sprite.collide_with_sprites
+            ]
+
+            for i, sprite in enumerate(physics_objects):
+                for other in physics_objects[i + 1:]:
+                    sprite._resolve_sprite_collision(other)
+
             self.camera._update()
             Particles._update()
 
-        self._draw_backdrop()
-
-        for tilemap in self._tilemaps:
-            tilemap._draw()
-
-        for sprite in self._sprites:
-            sprite._draw()
-
-        Particles._draw()
-
-        for zone in self._zones:
-            zone._draw()
 
 # ======ZONES======
 
