@@ -440,7 +440,12 @@ class Sprite:
         self._hitbox = None                # None = use the whole image, Otherwise use the specified Hitbox
         self._x_limits = None              # see clamping below
         self._y_limits = None
-        self._zone = None                  # a Zone the sprite is locked insid
+        self._zone = None                  # a Zone the sprite is locked inside
+        self._animations = {}
+        self.animation = None              #The Currently Playing animation
+        self.animation_playing = False     #Whether the sprite currently has an animation playing
+        self._animation_frame = 0          #The Current Frame Of The Animation
+        self._animation_timer = 0.0
         self._tweens = {}                   #An Array of all the current active tweens
         Stage._sprites.append(self)        # the Stage will now draw it for us
 
