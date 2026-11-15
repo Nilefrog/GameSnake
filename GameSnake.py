@@ -1059,14 +1059,36 @@ class PhysicsObject(Sprite):
                 other.velocity.x -= normal.x * impulse / other.mass
                 other.velocity.y -= normal.y * impulse / other.mass
 
+
+        elif mode == "push":
+            # Both objects share their velocity along the collision axis.
+            if normal.x != 0:
+                shared = (
+                    self.mass * self.velocity.x
+                    + other.mass * other.velocity.x
+                ) / total_mass
+
+                self.velocity.x = shared
+                other.velocity.x = shared
+
+            else:
+                shared = (
+                    self.mass * self.velocity.y
+                    + other.mass * other.velocity.y
+                ) / total_mass
+
+                self.velocity.y = shared
+                other.velocity.y = shared
+
         else:
-            # Basic and push collisions stop movement along the collision axis.
+            # Basic collision stops both objects.
             if normal.x != 0:
                 self.velocity.x = 0
                 other.velocity.x = 0
             else:
                 self.velocity.y = 0
                 other.velocity.y = 0
+
 
 # ======TEXT AND BOX======
 
