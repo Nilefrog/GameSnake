@@ -1400,50 +1400,50 @@ class _Stage:
             Screen.surface.blit(self._backdrop, (-ox, -oy))
 
         #advance=False (used by hitstop) draws the picture WITHOUT moving anything: sprites, camera and particles all stay frozen
-def _draw_frame(self, advance=True):
-    if advance:
-        delta_time = 1 / Screen.fps
+    def _draw_frame(self, advance=True):
+        if advance:
+            delta_time = 1 / Screen.fps
 
-        for sprite in self._sprites:
-            sprite._apply_edge_mode()
-            sprite._apply_limits()
-            sprite._update_tweens(delta_time)
-            sprite._update_animation(delta_time)
-
-            if isinstance(sprite, PhysicsObject):
-                sprite._update_physics(delta_time)
-
-                # Apply screen boundaries and limits after movement.
+            for sprite in self._sprites:
                 sprite._apply_edge_mode()
                 sprite._apply_limits()
+                sprite._update_tweens(delta_time)
+                sprite._update_animation(delta_time)
 
-        # Resolve collisions between PhysicsObjects.
-        physics_objects = [
-            sprite for sprite in self._sprites
-            if isinstance(sprite, PhysicsObject)
-            and sprite.collide_with_sprites
-        ]
+                if isinstance(sprite, PhysicsObject):
+                    sprite._update_physics(delta_time)
 
-        for i, sprite in enumerate(physics_objects):
-            for other in physics_objects[i + 1:]:
-                sprite._resolve_sprite_collision(other)
+                    # Apply screen boundaries and limits after movement.
+                    sprite._apply_edge_mode()
+                    sprite._apply_limits()
 
-        self.camera._update()
-        Particles._update()
+            # Resolve collisions between PhysicsObjects.
+            physics_objects = [
+                sprite for sprite in self._sprites
+                if isinstance(sprite, PhysicsObject)
+                and sprite.collide_with_sprites
+            ]
 
-    # DRAWING
-    self._draw_backdrop()
+            for i, sprite in enumerate(physics_objects):
+                for other in physics_objects[i + 1:]:
+                    sprite._resolve_sprite_collision(other)
 
-    for tilemap in self._tilemaps:
-        tilemap._draw()
+            self.camera._update()
+            Particles._update()
 
-    for sprite in self._sprites:
-        sprite._draw()
+        # DRAWING
+        self._draw_backdrop()
 
-    Particles._draw()
+        for tilemap in self._tilemaps:
+            tilemap._draw()
 
-    for zone in self._zones:
-        zone._draw()
+        for sprite in self._sprites:
+            sprite._draw()
+
+        Particles._draw()
+
+        for zone in self._zones:
+            zone._draw()
 
 
 # ======ZONES======
