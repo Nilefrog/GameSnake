@@ -920,7 +920,56 @@ class PhysicsObject(Sprite):
         self.y += self.velocity.y * dt
         self._resolve_tilemap_collision("y")
 
-        # Acceleration is applied continuously, so it remains unchanged.
+        # Check whether we are still touching any solid tiles.
+        self._update_tile_contact_flags()
+
+    def _update_tile_contact_flags(self):
+        rect = self._hitbox_rect()
+
+        # Create thin probes around each side of the hitbox.
+        probes = {
+            "floor": pygame.Rect(
+                rect.left, rect.bottom, rect.width, 1
+            ),
+            "roof": pygame.Rect(
+                rect.left, rect.top - 1, rect.width, 1
+            ),
+            "left": pygame.Rect(
+                rect.left - 1, rect.top, 1, rect.height
+            ),
+            "right": pygame.Rect(
+                rect.right, rect.top, 1, rect.height
+            )
+        }
+
+        for tilemap in Stage._tilemaps:
+            ts = tilemap.tile_size
+
+            for direction, probe in probes.items(): #this looks scary but were just checking in all directions by the appropriate tile map amount, if theyres a tile directly under us, next to use or above us.
+                left = probe.left // ts
+                right = (probe.right - 1) // ts
+                top = probe.top // ts
+                bottom = (probe.bottom - 1) // ts
+
+                for row in range(top, bottom + 1):
+                    for col in range(left, right + 1):
+                        if tilemap._cell(col, row) not in tilemap._solid:
+                            continue
+
+                        tile = pygame.Rect( #holy frog nonsense
+                            col * ts, row * ts, ts, ts
+                        )
+
+                        if probe.colliderect(tile):
+                            if direction == "floor":
+                                self.is_on_floor = True
+
+                            elif direction == "roof":
+                                self.is_on_roof = True
+
+                            else:
+                                self.is_on_wall = True
+
 
     def _resolve_tilemap_collision(self, axis):
         rect = self._hitbox_rect()
