@@ -236,11 +236,11 @@ class Vector2D:
         return self.subtract(normal.scale(2*self.dot(normal)))
 
     #limits a vectors magnitude to a maximum value:
-    def clamp_magnitude(self,max:float) -> "Vector2D":
-        if max < 0:
+    def clamp_magnitude(self,max_length:float) -> "Vector2D":
+        if max_length < 0:
             raise ValueError("Maximum magnitude cannot be negative!")
-        if self.mag() > max:
-            return (self.normalise()).scale(max)
+        if self.mag() > max_length:
+            return (self.normalise()).scale(max_length)
         return self
 
     #moves a vector toward anothe vector by a set distance 
